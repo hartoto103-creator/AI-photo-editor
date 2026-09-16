@@ -27,3 +27,10 @@ Architecture
 
 The application uses local AI inference for image processing,
 allowing object removal without requiring a cloud server.
+
+Issues
+
+- Inpainting quality can vary depending on the image.
+- Some complex objects may leave visible artifacts.
+- Lasso selection is still being refined.
+- Processing time can vary for high-resolution images.
