@@ -176,6 +176,12 @@ data class BrushStroke(
     val tool: ToolMode = ToolMode.BRUSH
 )
 
+data class EditorHistoryState(
+    val bitmap: Bitmap,
+    val strokes: List<BrushStroke>,
+    val detectionMask: Bitmap?
+)
+
 
 class MainActivity : ComponentActivity() {
 
@@ -886,14 +892,17 @@ fun ObjectRemoverApp() {
             mutableStateListOf<BrushStroke>()
         }
 
-// Image edit history: one successful Delete = one history step.
+// Unified editor history.
+// Every editing action is one history step:
+// Brush / Lasso / Detection / Erase / Delete.
     val undoHistory = remember {
-        mutableStateListOf<Bitmap>()
+        mutableStateListOf<EditorHistoryState>()
     }
 
     val redoHistory = remember {
-        mutableStateListOf<Bitmap>()
+        mutableStateListOf<EditorHistoryState>()
     }
+
     // Image-space points for the stroke currently being drawn.
     var liveStroke by remember {
         mutableStateOf<List<Offset>>(
@@ -937,6 +946,28 @@ fun ObjectRemoverApp() {
         toolMode = ToolMode.BRUSH
     }
 
+    fun captureEditorState(): EditorHistoryState? {
+        val currentBitmap = bitmap ?: return null
+
+        return EditorHistoryState(
+            bitmap = currentBitmap.copy(
+                Bitmap.Config.ARGB_8888,
+                false
+            ),
+            strokes = strokes.toList(),
+            detectionMask = detectionMask?.copy(
+                Bitmap.Config.ARGB_8888,
+                false
+            )
+        )
+    }
+
+    fun saveUndoState() {
+        captureEditorState()?.let { state ->
+            undoHistory.add(state)
+            redoHistory.clear()
+        }
+    }
 
     // =====================================================================
     // DISCARD-ON-EXIT
@@ -1001,6 +1032,7 @@ fun ObjectRemoverApp() {
         if (isDeleting) return
 
         val currentBitmap = bitmap ?: return
+        val beforeDeleteState = captureEditorState()
 
         if (strokes.isEmpty() && detectionMask == null) {
             Toast.makeText(
@@ -1047,6 +1079,16 @@ fun ObjectRemoverApp() {
                     )
 
                 maskBitmap.recycle()
+
+                // Save complete editor state before applying this edit
+                beforeDeleteState?.let { state ->
+                    undoHistory.add(state)
+                    redoHistory.clear()
+                }
+
+                // New edit clears the redo history
+                redoHistory.clear()
+
 
                 bitmap = result
 
@@ -1177,44 +1219,51 @@ fun ObjectRemoverApp() {
                 },
 
                 onUndo = {
-                    val current = bitmap
+                    val currentState = captureEditorState()
 
-                    if (current != null && undoHistory.isNotEmpty()) {
-                        redoHistory.add(
-                            current.copy(
-                                Bitmap.Config.ARGB_8888,
-                                false
+                    if (currentState != null && undoHistory.isNotEmpty()) {
+
+                        redoHistory.add(currentState)
+
+                        val previousState =
+                            undoHistory.removeAt(
+                                undoHistory.lastIndex
                             )
-                        )
 
-                        bitmap = undoHistory.removeAt(
-                            undoHistory.lastIndex
-                        )
+                        bitmap = previousState.bitmap
 
                         strokes.clear()
+                        strokes.addAll(previousState.strokes)
+
+                        detectionMask?.recycle()
+                        detectionMask = previousState.detectionMask
                     }
                 },
 
                 onRedo = {
-                    val current = bitmap
+                    val currentState = captureEditorState()
 
-                    if (current != null && redoHistory.isNotEmpty()) {
-                        undoHistory.add(
-                            current.copy(
-                                Bitmap.Config.ARGB_8888,
-                                false
+                    if (currentState != null && redoHistory.isNotEmpty()) {
+
+                        undoHistory.add(currentState)
+
+                        val nextState =
+                            redoHistory.removeAt(
+                                redoHistory.lastIndex
                             )
-                        )
 
-                        bitmap = redoHistory.removeAt(
-                            redoHistory.lastIndex
-                        )
+                        bitmap = nextState.bitmap
 
                         strokes.clear()
+                        strokes.addAll(nextState.strokes)
+
+                        detectionMask?.recycle()
+                        detectionMask = nextState.detectionMask
                     }
                 },
 
                 onStrokeAdded = {
+                    saveUndoState()
                     strokes.add(it)
                 },
 
@@ -2577,7 +2626,12 @@ fun PhotoEditor(
                         points = stroke.points,
                         width = stroke.width,
                         tool = stroke.tool,
-                        closed = stroke.tool == ToolMode.LASSO
+                        closed = stroke.tool == ToolMode.LASSO,
+                        lassoVisualWidth = if (stroke.tool == ToolMode.LASSO) {
+                            11f / totalScale
+                        } else {
+                            brushSize / totalScale
+                        }
                     )
                 }
 
@@ -2593,7 +2647,12 @@ fun PhotoEditor(
                                 brushSize
                             }) / totalScale,
                         tool = toolMode,
-                        closed = false
+                        closed = false,
+                        lassoVisualWidth = if (toolMode == ToolMode.LASSO) {
+                            11f / totalScale
+                        } else {
+                            brushSize / totalScale
+                        }
                     )
                 }
 
@@ -2807,7 +2866,8 @@ private fun DrawScope.drawStrokePath(
     points: List<Offset>,
     width: Float,
     tool: ToolMode,
-    closed: Boolean
+    closed: Boolean,
+    lassoVisualWidth: Float = width
 ) {
 
     if (points.isEmpty()) {
@@ -2888,15 +2948,19 @@ private fun DrawScope.drawStrokePath(
             color = paintColor.copy(alpha = 0.6f),
             style =
                 Stroke(
-                    width = width.coerceAtMost(10f),
+                    width = lassoVisualWidth,
                     cap = StrokeCap.Round,
                     join = StrokeJoin.Round,
                     pathEffect =
                         PathEffect.dashPathEffect(
-                            floatArrayOf(32f, 20f)
+                            floatArrayOf(
+                                lassoVisualWidth * 3.2f,
+                                lassoVisualWidth * 1.8f
+                            )
                         )
                 )
         )
+
 
     } else {
 
