@@ -25,6 +25,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.exifinterface.media.ExifInterface
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -247,6 +254,67 @@ private fun ToolIcon(
     )
 }
 
+@Composable
+private fun EditingLoadingSpinner(
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(
+        label = "editing_spinner"
+    )
+
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(
+                durationMillis = 900,
+                easing = LinearEasing
+            ),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "spinner_rotation"
+    )
+
+    Canvas(
+        modifier = modifier.size(56.dp)
+    ) {
+        val center = Offset(
+            size.width / 2f,
+            size.height / 2f
+        )
+
+        val radius = size.minDimension * 0.32f
+        val strokeWidth = size.minDimension * 0.13f
+
+        for (i in 0 until 8) {
+
+            val angle =
+                Math.toRadians(
+                    (i * 45f + rotation).toDouble()
+                )
+
+            val x = center.x + kotlin.math.cos(angle).toFloat() * radius
+            val y = center.y + kotlin.math.sin(angle).toFloat() * radius
+
+            val alpha =
+                0.20f + (i / 7f) * 0.80f
+
+            drawLine(
+                color = Color.DarkGray.copy(alpha = alpha),
+                start = Offset(
+                    x - kotlin.math.cos(angle).toFloat() * strokeWidth * 0.45f,
+                    y - kotlin.math.sin(angle).toFloat() * strokeWidth * 0.45f
+                ),
+                end = Offset(
+                    x + kotlin.math.cos(angle).toFloat() * strokeWidth * 0.45f,
+                    y + kotlin.math.sin(angle).toFloat() * strokeWidth * 0.45f
+                ),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round
+            )
+        }
+    }
+}
 
 @Composable
 private fun IconGlyph(
@@ -1184,6 +1252,8 @@ fun ObjectRemoverApp() {
                 canRedo = redoHistory.isNotEmpty(),
                 canDeselect = strokes.isNotEmpty(),
 
+                isDeleting = isDeleting,
+
                 // EditorScreen no longer calls this directly on tap -
                 // it now always routes through its own discard-confirm
                 // dialog first. This lambda is only what actually runs
@@ -1409,6 +1479,8 @@ private fun EditorScreen(
     canRedo: Boolean,
     canDeselect: Boolean,
 
+    isDeleting: Boolean,
+
     onBack: () -> Unit,
     onSave: () -> Unit,
     onDelete: () -> Unit,
@@ -1506,6 +1578,16 @@ private fun EditorScreen(
 
                 detectionMask = detectionMask
             )
+
+            if (isDeleting) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    EditingLoadingSpinner()
+                }
+            }
+
         }
 
         // =========================================================
