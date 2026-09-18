@@ -2109,6 +2109,14 @@ fun PhotoEditor(
             toolMode
         )
 
+    var magnifierOnRight by remember {
+        mutableStateOf(false)
+    }
+
+    var magnifierCollisionLatched by remember {
+        mutableStateOf(false)
+    }
+
 
     Canvas(
 
@@ -2387,6 +2395,52 @@ fun PhotoEditor(
 
                                     val current =
                                         change.position
+
+                                    // =============================================================
+                                    // MAGNIFIER AUTO SIDE SWITCH
+                                    // =============================================================
+
+                                    val magnifierWidth = 350f
+                                    val magnifierHeight = 250f
+                                    val magnifierTop = 12f
+                                    val magnifierMargin = 12f
+
+                                    val magnifierLeft =
+                                        if (magnifierOnRight) {
+                                            size.width -
+                                                    magnifierWidth -
+                                                    magnifierMargin
+                                        } else {
+                                            magnifierMargin
+                                        }
+
+                                    val magnifierRect =
+                                        Rect(
+                                            magnifierLeft,
+                                            magnifierTop,
+                                            magnifierLeft + magnifierWidth,
+                                            magnifierTop + magnifierHeight
+                                        )
+
+                                    val touchingMagnifier =
+                                        magnifierRect.contains(current)
+
+                                    if (
+                                        touchingMagnifier &&
+                                        !magnifierCollisionLatched
+                                    ) {
+
+                                        magnifierOnRight =
+                                            !magnifierOnRight
+
+                                        magnifierCollisionLatched =
+                                            true
+
+                                    } else if (!touchingMagnifier) {
+
+                                        magnifierCollisionLatched =
+                                            false
+                                    }
 
                                     val brush =
                                         if (gestureTool == ToolMode.DESELECT) {
@@ -2798,22 +2852,36 @@ fun PhotoEditor(
                     pan = panState
                 )
 
-            val lensRadius = 55f
+            val lensWidth = 350f
+            val lensHeight = 250f
+            val lensTop = 12f
+            val lensMargin = 12f
+            val cornerRadius = 22f
+
+            val lensLeft =
+                if (magnifierOnRight) {
+                    size.width -
+                            lensWidth -
+                            lensMargin
+                } else {
+                    lensMargin
+                }
+
             val lensCenter =
                 Offset(
-                    finger.x,
-                    (finger.y - lensRadius * 2.2f)
-                        .coerceAtLeast(lensRadius + 4f)
+                    lensLeft + lensWidth / 2f,
+                    lensTop + lensHeight / 2f
                 )
 
             val zoom = 2.5f
 
             val sourceWidth =
-                (lensRadius * 2f / zoom / totalScale)
+                (lensWidth / zoom / totalScale)
                     .coerceAtLeast(1f)
 
             val sourceHeight =
-                sourceWidth
+                (lensHeight / zoom / totalScale)
+                    .coerceAtLeast(1f)
 
             val srcLeft =
                 (
@@ -2861,17 +2929,27 @@ fun PhotoEditor(
 
             val lensPath =
                 Path().apply {
-                    addOval(
-                        androidx.compose.ui.geometry.Rect(
-                            lensCenter.x - lensRadius,
-                            lensCenter.y - lensRadius,
-                            lensCenter.x + lensRadius,
-                            lensCenter.y + lensRadius
+                    addRoundRect(
+                        androidx.compose.ui.geometry.RoundRect(
+                            rect = Rect(
+                                lensLeft,
+                                lensTop,
+                                lensLeft + lensWidth,
+                                lensTop + lensHeight
+                            ),
+                            cornerRadius = CornerRadius(
+                                cornerRadius,
+                                cornerRadius
+                            )
                         )
                     )
                 }
 
             clipPath(lensPath) {
+
+                // =========================================================
+                // 1. ZOOMED PHOTO
+                // =========================================================
 
                 drawImage(
                     image = bitmap.asImageBitmap(),
@@ -2884,55 +2962,161 @@ fun PhotoEditor(
                         srcHeight
                     ),
                     dstOffset = IntOffset(
-                        (lensCenter.x - lensRadius)
-                            .roundToInt(),
-                        (lensCenter.y - lensRadius)
-                            .roundToInt()
+                        lensLeft.roundToInt(),
+                        lensTop.roundToInt()
                     ),
                     dstSize = IntSize(
-                        (lensRadius * 2f)
-                            .roundToInt(),
-                        (lensRadius * 2f)
-                            .roundToInt()
+                        lensWidth.roundToInt(),
+                        lensHeight.roundToInt()
                     )
                 )
+
+
+                // =========================================================
+                // 2. ZOOMED STROKES
+                // ---------------------------------------------------------
+                // Stroke coordinates are in IMAGE SPACE.
+                // The same source crop used by the magnifier is applied
+                // to the strokes so they line up exactly with the zoomed photo.
+                // =========================================================
+
+                val strokeScaleX =
+                    lensWidth / srcWidth.toFloat()
+
+                val strokeScaleY =
+                    lensHeight / srcHeight.toFloat()
+
+
+                withTransform({
+
+                    translate(
+                        left =
+                            lensLeft -
+                                    srcLeft * strokeScaleX,
+
+                        top =
+                            lensTop -
+                                    srcTop * strokeScaleY
+                    )
+
+                    scale(
+                        scaleX = strokeScaleX,
+                        scaleY = strokeScaleY,
+                        pivot = Offset.Zero
+                    )
+
+                }) {
+
+                    // -----------------------------------------------------
+                    // SAVED STROKES
+                    // -----------------------------------------------------
+
+                    for (stroke in strokes) {
+
+                        val previewTool =
+                            if (
+                                stroke.tool ==
+                                ToolMode.DESELECT
+                            ) {
+                                // Deselect is an actual Clear operation on
+                                // the main canvas. We don't want Clear to punch
+                                // through the magnifier itself, so show its
+                                // editing path visually instead.
+                                ToolMode.BRUSH
+                            } else {
+                                stroke.tool
+                            }
+
+                        drawStrokePath(
+                            points = stroke.points,
+
+                            width = stroke.width,
+
+                            tool = previewTool,
+
+                            closed =
+                                stroke.tool ==
+                                        ToolMode.LASSO,
+
+                            lassoVisualWidth =
+                                if (
+                                    stroke.tool ==
+                                    ToolMode.LASSO
+                                ) {
+                                    11f
+                                } else {
+                                    brushSize
+                                }
+                        )
+                    }
+
+
+                    // -----------------------------------------------------
+                    // LIVE STROKE
+                    // -----------------------------------------------------
+
+                    if (liveStroke.isNotEmpty()) {
+
+                        val previewTool =
+                            if (
+                                toolMode ==
+                                ToolMode.DESELECT
+                            ) {
+                                ToolMode.BRUSH
+                            } else {
+                                toolMode
+                            }
+
+                        drawStrokePath(
+                            points = liveStroke,
+
+                            width =
+                                if (
+                                    toolMode ==
+                                    ToolMode.DESELECT
+                                ) {
+                                    DESELECT_BRUSH_SIZE
+                                } else {
+                                    brushSize
+                                },
+
+                            tool = previewTool,
+
+                            closed = false,
+
+                            lassoVisualWidth =
+                                if (
+                                    toolMode ==
+                                    ToolMode.LASSO
+                                ) {
+                                    11f
+                                } else {
+                                    brushSize
+                                }
+                        )
+                    }
+                }
             }
 
-            drawCircle(
+            drawRoundRect(
                 color = Color.White,
-                center = lensCenter,
-                radius = lensRadius,
+                topLeft = Offset(
+                    lensLeft,
+                    lensTop
+                ),
+                size = Size(
+                    lensWidth,
+                    lensHeight
+                ),
+                cornerRadius = CornerRadius(
+                    cornerRadius,
+                    cornerRadius
+                ),
                 style = Stroke(
                     width = 3f
                 )
             )
 
-            // Center crosshair.
-            drawLine(
-                color = Color.White.copy(alpha = 0.8f),
-                start = Offset(
-                    lensCenter.x - 8f,
-                    lensCenter.y
-                ),
-                end = Offset(
-                    lensCenter.x + 8f,
-                    lensCenter.y
-                ),
-                strokeWidth = 1.5f
-            )
-
-            drawLine(
-                color = Color.White.copy(alpha = 0.8f),
-                start = Offset(
-                    lensCenter.x,
-                    lensCenter.y - 8f
-                ),
-                end = Offset(
-                    lensCenter.x,
-                    lensCenter.y + 8f
-                ),
-                strokeWidth = 1.5f
-            )
         }
 
     }
