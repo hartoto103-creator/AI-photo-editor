@@ -248,6 +248,8 @@ fun PrimaryDeleteButton(
 fun BottomControls(
     brushSize: Float,
     onBrushSizeChange: (Float) -> Unit,
+    eraseSize: Float,
+    onEraseSizeChange: (Float) -> Unit,
     toolMode: ToolMode,
     onToolModeChange: (ToolMode) -> Unit,
     canUndo: Boolean,
@@ -268,29 +270,49 @@ fun BottomControls(
     )
     ) {
 
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        val isEraseMode = toolMode == ToolMode.DESELECT
+
+        val adjustmentSize =
+            if (isEraseMode) eraseSize else brushSize
+
+        val onAdjustmentSizeChange =
+            if (isEraseMode) onEraseSizeChange else onBrushSizeChange
+
+        val adjustmentIcon =
+            if (isEraseMode) {
+                R.drawable.ic_eraser
+            } else {
+                R.drawable.ic_brush
+            }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
             ToolIcon(
-                painter = painterResource(R.drawable.ic_brush),
+                painter = painterResource(adjustmentIcon),
                 tint = brushSizeTint,
                 modifier = Modifier.size(18.dp),
                 contentDescription = null
             )
+
             Slider(
-                value = brushSize,
-                onValueChange = onBrushSizeChange,
+                value = adjustmentSize,
+                onValueChange = onAdjustmentSizeChange,
                 valueRange = 1f..100f,
                 enabled = brushSizeEnabled,
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .padding(horizontal = 8.dp)
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp)
             )
+
             Text(
-                text = brushSize.toInt().toString(),
+                text = adjustmentSize.toInt().toString(),
                 color = brushSizeTint,
                 modifier = Modifier.width(32.dp)
             )
         }
+
         Spacer(modifier = Modifier.height(4.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),

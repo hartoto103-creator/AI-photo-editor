@@ -32,28 +32,78 @@ import kotlinx.coroutines.withContext
 @Composable
 fun ObjectRemoverApp() {
     val context = LocalContext.current
-    val interactiveSegmenter = remember { InteractiveSegmenterHelper(context) }
-    DisposableEffect(Unit) { onDispose { interactiveSegmenter.close() } }
-    val coroutineScope = rememberCoroutineScope()
-    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var detectionMask by remember { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(bitmap) { bitmap?.let { currentBitmap ->
-        interactiveSegmenter.setInputImage(currentBitmap)
-    }
+    val interactiveSegmenter = remember {
+        InteractiveSegmenterHelper(context)
     }
 
-    var showPhotoPicker by remember {mutableStateOf(false)}
-    var brushSize by remember {mutableFloatStateOf(40f)}
-    var toolMode by remember {mutableStateOf(ToolMode.BRUSH)}
-    val strokes = remember {mutableStateListOf<BrushStroke>()}
-    val undoHistory = remember {mutableStateListOf<EditorHistoryState>()}
-    val redoHistory = remember {mutableStateListOf<EditorHistoryState>()}
-    var liveStroke by remember { mutableStateOf<List<Offset>>(emptyList()) }
-    var scale by remember { mutableFloatStateOf(1f) }
-    var pan by remember { mutableStateOf(Offset.Zero) }
-    var cursor by remember { mutableStateOf<Offset?>(null) }
-    var cursorVisible by remember { mutableStateOf(false) }
-    var isDeleting by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) {
+        onDispose {
+            interactiveSegmenter.close()
+        }
+    }
+
+    val coroutineScope = rememberCoroutineScope()
+
+    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var detectionMask by remember { mutableStateOf<Bitmap?>(null) }
+
+    LaunchedEffect(bitmap) {
+        bitmap?.let { currentBitmap ->
+            interactiveSegmenter.setInputImage(currentBitmap)
+        }
+    }
+
+    var showPhotoPicker by remember {
+        mutableStateOf(false)
+    }
+
+    var brushSize by remember {
+        mutableFloatStateOf(40f)
+    }
+
+    var eraseSize by remember {
+        mutableFloatStateOf(40f)
+    }
+
+    var toolMode by remember {
+        mutableStateOf(ToolMode.BRUSH)
+    }
+
+    val strokes = remember {
+        mutableStateListOf<BrushStroke>()
+    }
+
+    val undoHistory = remember {
+        mutableStateListOf<EditorHistoryState>()
+    }
+
+    val redoHistory = remember {
+        mutableStateListOf<EditorHistoryState>()
+    }
+
+    var liveStroke by remember {
+        mutableStateOf<List<Offset>>(emptyList())
+    }
+
+    var scale by remember {
+        mutableFloatStateOf(1f)
+    }
+
+    var pan by remember {
+        mutableStateOf(Offset.Zero)
+    }
+
+    var cursor by remember {
+        mutableStateOf<Offset?>(null)
+    }
+
+    var cursorVisible by remember {
+        mutableStateOf(false)
+    }
+
+    var isDeleting by remember {
+        mutableStateOf(false)
+    }
 
     fun resetEditorState() {
         strokes.clear()
@@ -69,6 +119,7 @@ fun ObjectRemoverApp() {
 
     fun captureEditorState(): EditorHistoryState? {
         val currentBitmap = bitmap ?: return null
+
         return EditorHistoryState(
             bitmap = currentBitmap.copy(
                 Bitmap.Config.ARGB_8888,
@@ -89,20 +140,26 @@ fun ObjectRemoverApp() {
         }
     }
 
-    fun discardAndExitEditor() { bitmap = null
+    fun discardAndExitEditor() {
+        bitmap = null
         resetEditorState()
     }
 
     // =====================================================================
     // PHOTO SELECTION -> EDITOR HANDOFF
     // =====================================================================
+
     fun onImageUriSelected(uri: Uri) {
         coroutineScope.launch {
-            val loaded = withContext(Dispatchers.IO) { decodeOrientedBitmap(context, uri) }
+            val loaded = withContext(Dispatchers.IO) {
+                decodeOrientedBitmap(context, uri)
+            }
+
             if (loaded != null) {
                 bitmap = loaded
                 resetEditorState()
             }
+
             showPhotoPicker = false
         }
     }
@@ -110,21 +167,27 @@ fun ObjectRemoverApp() {
     // =====================================================================
     // DELETE -> LaMa BRIDGE
     // =====================================================================
+
     fun performDelete() {
         if (isDeleting) return
+
         val currentBitmap = bitmap ?: return
         val beforeDeleteState = captureEditorState()
+
         if (strokes.isEmpty() && detectionMask == null) {
             Toast.makeText(
                 context,
                 "Select an object first.",
                 Toast.LENGTH_SHORT
             ).show()
+
             return
         }
 
         val consumedStrokes = strokes.toList()
+
         isDeleting = true
+
         coroutineScope.launch {
             try {
                 val maskBitmap =
@@ -141,30 +204,45 @@ fun ObjectRemoverApp() {
                         }
 
                 val inpainter = LamaInpainter.getInstance(context)
-                val result = inpainter.inpaint(image = currentBitmap, maskBitmap)
+
+                val result = inpainter.inpaint(
+                    image = currentBitmap,
+                    maskBitmap
+                )
+
                 maskBitmap.recycle()
+
                 beforeDeleteState?.let { state ->
                     undoHistory.add(state)
                     redoHistory.clear()
                 }
+
                 redoHistory.clear()
+
                 bitmap = result
+
                 if (detectionMask != null) {
                     detectionMask?.recycle()
                     detectionMask = null
                 }
+
                 strokes.removeAll(consumedStrokes)
+
             } catch (e: Exception) {
                 e.printStackTrace()
+
                 Log.e(
                     "LamaDelete",
                     "OBJECT REMOVAL FAILED",
                     e
                 )
-                Toast.makeText(context,
+
+                Toast.makeText(
+                    context,
                     "Object removal failed",
                     Toast.LENGTH_SHORT
                 ).show()
+
             } finally {
                 isDeleting = false
             }
@@ -176,62 +254,113 @@ fun ObjectRemoverApp() {
         // =====================================================================
         // TOP-LEVEL SCREEN SWITCH
         // =====================================================================
+
         if (bitmap == null) {
+
             if (showPhotoPicker) {
+
                 PhotoPickerScreen(
-                    onClose = { showPhotoPicker = false },
-                    onImageSelected = { uri -> onImageUriSelected(uri) }
+                    onClose = {
+                        showPhotoPicker = false
+                    },
+                    onImageSelected = { uri ->
+                        onImageUriSelected(uri)
+                    }
                 )
+
             } else {
-                HomeScreen(onPickPhoto = { showPhotoPicker = true })
+
+                HomeScreen(
+                    onPickPhoto = {
+                        showPhotoPicker = true
+                    }
+                )
             }
+
         } else {
+
             EditorScreen(
                 bitmap = bitmap!!,
+
                 brushSize = brushSize,
-                onBrushSizeChange = { brushSize = it },
+                onBrushSizeChange = {
+                    brushSize = it
+                },
+
+                eraseSize = eraseSize,
+                onEraseSizeChange = {
+                    eraseSize = it
+                },
+
                 toolMode = toolMode,
-                onToolModeChange = { toolMode = it },
+                onToolModeChange = {
+                    toolMode = it
+                },
+
                 strokes = strokes,
                 liveStroke = liveStroke,
+
                 scale = scale,
                 pan = pan,
+
                 cursor = cursor,
                 cursorVisible = cursorVisible,
+
                 canUndo = undoHistory.isNotEmpty(),
                 canRedo = redoHistory.isNotEmpty(),
                 canDeselect = strokes.isNotEmpty(),
+
                 isDeleting = isDeleting,
 
                 onBack = {
                     discardAndExitEditor()
                     showPhotoPicker = true
                 },
+
                 onSave = {
                     val bmp = bitmap
+
                     if (bmp != null) {
-                        val ok = saveMarkedImage(context, bmp, strokes)
+                        val ok = saveMarkedImage(
+                            context,
+                            bmp
+                        )
 
                         Toast.makeText(
                             context,
-                            if (ok) "Saved to gallery" else "Save failed",
+                            if (ok) {
+                                "Saved to gallery"
+                            } else {
+                                "Save failed"
+                            },
                             Toast.LENGTH_SHORT
                         ).show()
                     }
                 },
 
-                onDelete = { performDelete() },
+                onDelete = {
+                    performDelete()
+                },
+
                 onUndo = {
                     val currentState = captureEditorState()
-                    if (currentState != null && undoHistory.isNotEmpty()) {
+
+                    if (
+                        currentState != null &&
+                        undoHistory.isNotEmpty()
+                    ) {
                         redoHistory.add(currentState)
+
                         val previousState =
                             undoHistory.removeAt(
                                 undoHistory.lastIndex
                             )
+
                         bitmap = previousState.bitmap
+
                         strokes.clear()
                         strokes.addAll(previousState.strokes)
+
                         detectionMask?.recycle()
                         detectionMask = previousState.detectionMask
                     }
@@ -239,16 +368,23 @@ fun ObjectRemoverApp() {
 
                 onRedo = {
                     val currentState = captureEditorState()
-                    if (currentState != null && redoHistory.isNotEmpty()) {
+
+                    if (
+                        currentState != null &&
+                        redoHistory.isNotEmpty()
+                    ) {
                         undoHistory.add(currentState)
+
                         val nextState =
                             redoHistory.removeAt(
                                 redoHistory.lastIndex
                             )
 
                         bitmap = nextState.bitmap
+
                         strokes.clear()
                         strokes.addAll(nextState.strokes)
+
                         detectionMask?.recycle()
                         detectionMask = nextState.detectionMask
                     }
@@ -259,15 +395,29 @@ fun ObjectRemoverApp() {
                     strokes.add(it)
                 },
 
-                onLiveStrokeChanged = { liveStroke = it },
-                onScaleChanged = { scale = it },
-                onPanChanged = { pan = it },
-                onCursorChanged = { cursor = it },
+                onLiveStrokeChanged = {
+                    liveStroke = it
+                },
+
+                onScaleChanged = {
+                    scale = it
+                },
+
+                onPanChanged = {
+                    pan = it
+                },
+
+                onCursorChanged = {
+                    cursor = it
+                },
+
                 interactiveSegmenter = interactiveSegmenter,
+
                 onDetectionMaskReady = { mask ->
                     detectionMask?.recycle()
                     detectionMask = mask
                 },
+
                 detectionMask = detectionMask
             )
         }
