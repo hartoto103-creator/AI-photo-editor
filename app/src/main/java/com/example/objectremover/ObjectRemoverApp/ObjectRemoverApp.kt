@@ -414,6 +414,7 @@ fun ObjectRemoverApp() {
                 interactiveSegmenter = interactiveSegmenter,
 
                 onDetectionMaskReady = { mask ->
+                    saveUndoState()
                     detectionMask?.recycle()
                     detectionMask = mask
                 },
